@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vantage Cloud-Relay
 
-## Getting Started
+![Vantage Headset Pipeline](https://vantage-cloud-relay.app/header.png)
 
-First, run the development server:
+A high-performance, event-driven assistive technology prototype. This system simulates the edge capabilities of the **Vantage Headset** by turning any web-enabled camera (like an iPhone) into a real-time accessibility agent.
+
+It streams camera frames over a persistent WebSocket connection to a custom Node.js/Next.js backend, where images are pushed into a concurrent processing queue. They are then analyzed by the **Gemini 2.0 Flash Vision Model** via OpenRouter, and the resulting scene description is narrated using **ElevenLabs Multilingual V2 TTS**, feeding ultra-low latency audio back directly to the edge device.
+
+## Architecture Pipeline
+
+1. **Edge Device (Client)**: Captures 480x270 JPEG frames every 3 seconds to optimize bandwidth.
+2. **WebSocket Ingestion**: A custom Socket.io server intercepts requests alongside the Next.js App Router to maintain a stateful connection.
+3. **Queue Mechanism**: Frames enter an in-memory `JobQueue` to decouple ingestion from the sometimes-unpredictable latency of external AI APIs.
+4. **Vision LLM**: Frames are sent to `google/gemini-2.0-flash-001` with a rigid system prompt compelling concise, navigation-critical spatial awareness.
+5. **Real-time TTS**: The generated text is immediately synthesized into an MP3 via ElevenLabs and streamed back to the client.
+6. **Web Audio API**: The edge device plays the returning audio non-blocking without requiring HTML `<audio>` elements.
+
+## Tech Stack
+
+- **Frontend**: Next.js 15 App Router, React 19, TailwindCSS, Socket.io-client
+- **Backend**: Custom Express/Node.js server executing Socket.io
+- **AI Tooling**: OpenRouter (Gemini), ElevenLabs TTS
+- **Telemetry**: Recharts for latency graphing
+
+## Running Locally
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Set up your `.env.local` file at the root of the project with your API keys:
+
+```env
+OPENROUTER_API_KEY=your_openrouter_key
+ELEVENLABS_API_KEY=your_elevenlabs_key
+NEXT_PUBLIC_SOCKET_URL=http://localhost:3000
+```
+
+_(Note: Never commit your real API keys! This file is intentionally ignored by git.)_
+
+3. Start the dev server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Testing on iOS (PWA setup)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Because iOS strictly mandates HTTPS for secure contexts like camera access, you must use an application like **ngrok** to tunnel localhost:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. `ngrok http 3000`
+2. Update `.env.local` with the new ngrok URL (`NEXT_PUBLIC_SOCKET_URL=https://...ngrok-free.dev`)
+3. Restart the dev server
+4. Visit the URL on Safari, tap **Share → Add to Home Screen**
+5. Launch the app from the Home Screen, tap "Start Camera", and allow permissions.
 
-## Learn More
+## Security Constraints
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The browser's `navigator.mediaDevices` relies on explicit user gesture initialization when used in newer WebKit (Safari) and Chromium environments.
+- AudioContexts similarly require synchronous initialization inside an `onClick` event on iOS.
+- `next.config.ts` must allow `allowedDevOrigins` if exposing over external tunnels to prevent hydration breakage security blockers.
