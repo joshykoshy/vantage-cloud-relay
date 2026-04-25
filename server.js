@@ -19,7 +19,7 @@ require("dotenv").config({ path: ".env.local" });
 const dev = process.env.NODE_ENV !== "production";
 const port = parseInt(process.env.PORT || "3000", 10);
 
-const app = next({ dev, hostname: "localhost", port });
+const app = next({ dev, hostname: "0.0.0.0", port });
 const handle = app.getRequestHandler();
 
 // ── Vision LLM Client (inlined from lib/visionClient.ts) ─────
@@ -85,8 +85,12 @@ async function describeFrame(imageBase64) {
 async function synthesizeAudio(text) {
   try {
     const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) throw new Error("ELEVENLABS_API_KEY not set");
+    if (!apiKey) {
+      console.warn("[TTSClient] ELEVENLABS_API_KEY not set — client will use browser fallback");
+      return "";
+    }
 
+    console.log(`[TTSClient] Synthesizing: "${text}"`);
     const res = await fetch(
       "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
       {
@@ -106,12 +110,15 @@ async function synthesizeAudio(text) {
 
     if (!res.ok) {
       const errBody = await res.text();
-      throw new Error(`ElevenLabs ${res.status}: ${errBody.slice(0, 300)}`);
+      console.error(`[TTSClient] ElevenLabs ${res.status}: ${errBody.slice(0, 300)}`);
+      console.warn("[TTSClient] TTS failed — client will use browser speechSynthesis fallback");
+      return "";
     }
     const buffer = await res.arrayBuffer();
+    console.log(`[TTSClient] OK — ${buffer.byteLength} bytes`);
     return Buffer.from(buffer).toString("base64");
   } catch (err) {
-    console.error("[TTSClient]", err.message);
+    console.error("[TTSClient] Network error:", err.message);
     return "";
   }
 }
@@ -229,7 +236,7 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, "0.0.0.0", () => {
     console.log(`\n  🚀 Vantage Cloud Relay`);
     console.log(`  ├─ Edge View:   http://localhost:${port}`);
     console.log(`  └─ Dashboard:  http://localhost:${port}/dashboard\n`);
